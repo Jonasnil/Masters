@@ -44,8 +44,8 @@ rlc_circuit_data_over = {'type': 'over',    # Type of stimuli (over/under-dampen
 
 # Compartmental neuron model, anchor = top left position of the center of the neuron model in the E-field
 class TwoCompartmentNeuron:
-    def __init__(self, coord_start_mid_stop, coil_dict, d=1*10**-6,
-                 Em=-70*10**-3, Cm=1*10**-6, Rm=10000*10-2, Ra=100*10-2):
+    def __init__(self, coord_start_mid_stop, coil_dict, d=1*10**-6, Em=-70*10**-3, Cm=1*10**-6,
+                 Rm=10000*10-2, Ra=100*10-2, I_calc_method='I_a'):
         self.compartments = 2
         self.V = []
         self.Em = Em
@@ -53,6 +53,7 @@ class TwoCompartmentNeuron:
         self.Rm = Rm
         self.Ra = Ra
         self.d = d
+        self.I_calc_method = I_calc_method
         self.coil_dict = coil_dict
         self.coord = coord_start_mid_stop
         self.dir_unit_vec = np.zeros((2, 2))
@@ -90,7 +91,7 @@ class TwoCompartmentNeuron:
             Ey_spat[i] = E_spat*sin_alpha
         return Ex_spat, Ey_spat
 
-    def calc_I_am(self, Ex, Ey, comp):
+    def calc_delta_i_am(self, Ex, Ey, comp):
         return (self.d/(4*self.Ra*self.l**2))*((Ex[1] - Ex[0])*self.dir_unit_vec[comp, 0]
                                                 + (Ey[1] - Ey[0])*self.dir_unit_vec[comp, 1])
 
@@ -100,29 +101,37 @@ class TwoCompartmentNeuron:
     def calc_delta_V2(self, V1, V2, delta_t, I_a):
         return ((self.Em - V2)/self.Rm + (self.d/(4*self.Ra))*(V1 - V2)/self.l**2 + I_a)*(delta_t/self.Cm)
 
-    def calc_I_a(self, Ex, Ey, comp):
-        pass
+    def calc_I_a(self, Ex, Ey):
+        return (self.d/(4*self.Ra*self.l))*(Ex[1]*(self.dir_unit_vec[0, 0]) + Ey[1]*(self.dir_unit_vec[0, 1]))
 
     def simulate(self, time_arr, E_I_temp):
         delta_t = time_arr[1] - time_arr[0]
         self.V = np.zeros((self.compartments, time_arr.shape[0]))
         self.V[0, 0] = self.Em
         self.V[1, 0] = self.Em
-        I_am_1 = np.zeros_like(time_arr)
-        I_am_2 = np.zeros_like(time_arr)
         Ex_spat, Ey_spat = self.calc_E_spat()
 
-        for i in range(len(time_arr)-1):
-            Ex_full = Ex_spat*E_I_temp[i]
-            Ey_full = Ey_spat*E_I_temp[i]
+        if self.I_calc_method == 'i_am':
+            delta_I_am_1 = np.zeros_like(time_arr)
+            delta_I_am_2 = np.zeros_like(time_arr)
 
-            I_am_1[i+1] = self.calc_I_am(Ex_full[:2], Ey_full[:2], 0)
-            delta_I_am_1 = I_am_1[i+1] - I_am_1[i]
-            self.V[0, i+1] = self.V[0, i] + self.calc_delta_V1(self.V[0, i], self.V[1, i], delta_t, delta_I_am_1)
+            for i in range(len(time_arr)-1):
+                Ex_full = Ex_spat*E_I_temp[i]
+                Ey_full = Ey_spat*E_I_temp[i]
 
-            I_am_2[i+1] = self.calc_I_am(Ex_full[1:], Ey_full[1:], 1)
-            delta_I_am_2 = I_am_2[i+1] - I_am_2[i]
-            self.V[1, i+1] = self.V[1, i] + self.calc_delta_V2(self.V[0, i], self.V[1, i], delta_t, delta_I_am_2)
+                delta_I_am_1[i+1] = self.calc_delta_i_am(Ex_full[:2], Ey_full[:2], 0)
+                self.V[0, i+1] = self.V[0, i] + self.calc_delta_V1(self.V[0, i], self.V[1, i], delta_t, delta_I_am_1[i+1])
+                delta_I_am_2[i+1] = self.calc_delta_i_am(Ex_full[1:], Ey_full[1:], 1)
+                self.V[1, i+1] = self.V[1, i] + self.calc_delta_V2(self.V[0, i], self.V[1, i], delta_t, delta_I_am_2[i+1])
+
+        elif self.I_calc_method == 'I_a':
+            I_a = np.zeros_like(time_arr)
+            for i in range(len(time_arr)-1):
+                Ex_full = Ex_spat*E_I_temp[i]
+                Ey_full = Ey_spat*E_I_temp[i]
+                I_a[i+1] = self.calc_I_a(Ex_full, Ey_full)
+                self.V[0, i+1] = self.V[0, i] + self.calc_delta_V1(self.V[0, i], self.V[1, i], delta_t, -1*I_a[i+1])
+                self.V[1, i+1] = self.V[1, i] + self.calc_delta_V2(self.V[0, i], self.V[1, i], delta_t, I_a[i+1])
 
 
 # Calculate m = k**2
