@@ -9,7 +9,8 @@ radius = 40000*10**-6                       # Scale from the center of the coil 
 spatial_resolution = 100*10**-6             # Spatial resolution in m
 time = 10                                   # milli sec
 timestep = 0.01                             # milli sec
-time_array = np.arange(0, time + timestep, timestep)
+timescale = 10**-3                          # Time is in milli s scale
+time_array = np.arange(0, time + timestep, timestep)*timescale
 
 # Two-compartment-neuron position in relation to center of coil in xy coordinates (in m) [[start], [mid], [stop]]
 compartment_coords = np.array([[10000, 10000],
@@ -43,10 +44,9 @@ rlc_circuit_data_over = {'type': 'over',    # Type of stimuli (over/under-dampen
 
 # Compartmental neuron model, anchor = top left position of the center of the neuron model in the E-field
 class TwoCompartmentNeuron:
-    def __init__(self, coord_start_mid_stop, coil_dict, timescale=10**-3, d=1*10**-6,
+    def __init__(self, coord_start_mid_stop, coil_dict, d=1*10**-6,
                  Em=-70*10**-3, Cm=1*10**-6, Rm=10000*10-2, Ra=100*10-2):
         self.compartments = 2
-        self.t_scale = timescale
         self.V = []
         self.Em = Em
         self.Cm = Cm
@@ -91,7 +91,8 @@ class TwoCompartmentNeuron:
         return Ex_spat, Ey_spat
 
     def calc_I_am(self, Ex, Ey, comp):
-        return (1./(self.Ra*self.l))*((Ex[1] - Ex[0])*self.dir_unit_vec[comp, 0] + (Ey[1] - Ey[0])*self.dir_unit_vec[comp, 1])
+        return (self.d/(4*self.Ra*self.l**2))*((Ex[1] - Ex[0])*self.dir_unit_vec[comp, 0]
+                                                + (Ey[1] - Ey[0])*self.dir_unit_vec[comp, 1])
 
     def calc_delta_V1(self, V1, V2, delta_t, I_a):
         return ((self.Em - V1)/self.Rm - (self.d/(4*self.Ra))*(V1 - V2)/self.l**2 + I_a)*(delta_t/self.Cm)
@@ -103,7 +104,7 @@ class TwoCompartmentNeuron:
         pass
 
     def simulate(self, time_arr, E_I_temp):
-        delta_t = (time_arr[1] - time_arr[0])*self.t_scale
+        delta_t = time_arr[1] - time_arr[0]
         self.V = np.zeros((self.compartments, time_arr.shape[0]))
         self.V[0, 0] = self.Em
         self.V[1, 0] = self.Em
@@ -199,12 +200,12 @@ def calc_omega_over(rlc_dict_over):
 
 # Calculate I for UNDERdamped RLC circuit
 def calc_I_under(V0, C, w1, w2, t):
-    return V0*C*w2*m.exp(-w1*t*10**-3)*((w1/w2)**2 + 1)*m.sin(w2*t*10**-3)
+    return V0*C*w2*m.exp(-w1*t)*((w1/w2)**2 + 1)*m.sin(w2*t)
 
 
 # Calculate I for OVERdamped RLC circuit
 def calc_I_over(V0, C, w1, w2, t):
-    return V0*C*w2*m.exp(-w1*t*10**-3)*((w1/w2)**2 - 1)*m.sinh(w2*t*10**-3)
+    return V0*C*w2*m.exp(-w1*t)*((w1/w2)**2 - 1)*m.sinh(w2*t)
 
 
 # Calculate the temporal electrical field
