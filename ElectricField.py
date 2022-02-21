@@ -13,8 +13,8 @@ time_array = np.arange(0, time + timestep, timestep)
 
 # Two-compartment-neuron position in relation to center of coil in xy coordinates (in m) [[start], [mid], [stop]]
 compartment_coords = np.array([[10000, 10000],
-                               [10100, 10000],
-                               [10200, 10000]])*10**-6
+                               [10200, 10000],
+                               [10400, 10000]])*10**-6
 
 # Coil data
 coil_data = {'N': 30,                       # Number of loops in coil
@@ -57,17 +57,19 @@ class TwoCompartmentNeuron:
         self.coord = coord_start_mid_stop
         self.dir_unit_vec = np.zeros((self.compartments, 2))
         self.center_coord = np.zeros((self.compartments, 2))
-        self.dir_unit_vec_prod = np.zeros((self.compartments-1, 2))
-        self.l = np.zeros((self.compartments, 1))
+        self.dir_unit_vec_dot_prod = np.zeros((self.compartments - 1, 2))
+        self.l = np.zeros((self.compartments-1, 1))
 
     def calc_dir_unit_vec(self):
         for i in range(self.compartments):
             vec = self.coord[i+1] - self.coord[i]
-            self.l[i] = m.sqrt(vec[0]**2 + vec[1]**2)
-            self.dir_unit_vec[i, :] = vec/self.l[i]
+            vec_len = m.sqrt(vec[0]**2 + vec[1]**2)
+            self.dir_unit_vec[i, :] = vec/vec_len
             self.center_coord[i, :] = self.coord[i] + vec/2.
             if i > 0:
-                self.dir_unit_vec_prod[i-1] = self.dir_unit_vec[i-1] * self.dir_unit_vec[i]
+                center_vec = self.center_coord[i] - self.center_coord[i-1]
+                self.l[i-1] = m.sqrt(center_vec[0] ** 2 + center_vec[1] ** 2)
+                self.dir_unit_vec_dot_prod[i-1, :] = center_vec/self.l[i-1]
 
     def calc_m_kk(self, r, z, h):
         return (4*r*h)/((r + h)**2 + z**2)
@@ -96,16 +98,16 @@ class TwoCompartmentNeuron:
             Ey_spat[i] = E_spat*sin_alpha
         return Ex_spat, Ey_spat
 
-    def calc_delta_i_am(self, Ex, Ey, comp):
-        return (self.d/(4*self.Ra*self.l[comp]**2))*((Ex[1] - Ex[0])*self.dir_unit_vec_prod[comp, 0]
-                                                     + (Ey[1] - Ey[0])*self.dir_unit_vec_prod[comp, 1])
+    def calc_delta_i_am(self, Ex, Ey, pos):
+        return (self.d/(4*self.Ra*self.l[pos]**2))*((Ex[1] - Ex[0])*self.dir_unit_vec_dot_prod[pos, 0]
+                                                     + (Ey[1] - Ey[0])*self.dir_unit_vec_dot_prod[pos, 1])
 
-    def calc_I_a(self, Ex, Ey, comp):
-        return (self.d/(4*self.Ra*self.l[comp]))*((Ex[0] + Ex[1])/2.*(self.dir_unit_vec_prod[comp, 0])
-                                                  + (Ey[0] + Ey[1])/2.*(self.dir_unit_vec_prod[comp, 1]))
+    def calc_I_a(self, Ex, Ey, pos):
+        return (self.d/(4*self.Ra*self.l[pos]))*((Ex[0] + Ex[1])/2.*(self.dir_unit_vec_dot_prod[pos, 0])
+                                                  + (Ey[0] + Ey[1])/2.*(self.dir_unit_vec_dot_prod[pos, 1]))
 
-    def calc_delta_V(self, V0, V_o, delta_t, I_a, comp):
-        return ((self.Em - V0)/self.Rm - (self.d/(4*self.Ra))*(V0 - V_o)/self.l[comp]**2 + I_a)*(delta_t/self.Cm)
+    def calc_delta_V(self, V0, V_o, delta_t, I_a, pos):
+        return ((self.Em - V0)/self.Rm - (self.d/(4*self.Ra))*(V0 - V_o)/self.l[pos]**2 - I_a)*(delta_t/self.Cm)
 
     def simulate(self, time_arr, E_I_temp):
         delta_t = (time_arr[1] - time_arr[0])*10**-3
@@ -122,9 +124,9 @@ class TwoCompartmentNeuron:
                 Ey_full = Ey_spat*E_I_temp[i]
                 delta_I_am[i+1] = self.calc_delta_i_am(Ex_full, Ey_full, 0)
                 self.V[0, i+1] = self.V[0, i] + self.calc_delta_V(self.V[0, i], self.V[1, i],
-                                                                  delta_t, -1*delta_I_am[i+1], 0)
+                                                                  delta_t, delta_I_am[i+1], 0)
                 self.V[1, i+1] = self.V[1, i] + self.calc_delta_V(self.V[1, i], self.V[0, i],
-                                                                  delta_t, delta_I_am[i+1], 1)
+                                                                  delta_t, -1*delta_I_am[i+1], 0)
 
         elif self.I_calc_method == 'I_a':
             I_a = np.zeros_like(time_arr)
@@ -133,9 +135,9 @@ class TwoCompartmentNeuron:
                 Ey_full = Ey_spat*E_I_temp[i]
                 I_a[i+1] = self.calc_I_a(Ex_full, Ey_full, 0)
                 self.V[0, i+1] = self.V[0, i] + self.calc_delta_V(self.V[0, i], self.V[1, i],
-                                                                  delta_t, -1*I_a[i+1], 0)
+                                                                  delta_t, I_a[i+1], 0)
                 self.V[1, i+1] = self.V[1, i] + self.calc_delta_V(self.V[1, i], self.V[0, i],
-                                                                  delta_t, I_a[i+1], 1)
+                                                                  delta_t, -1*I_a[i+1], 0)
         else:
             print('Wrong I_calc_method, must be "I_a" or "i_am".')
 
