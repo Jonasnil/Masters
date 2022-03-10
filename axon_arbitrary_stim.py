@@ -5,6 +5,7 @@ matplotlib.use("AGG")
 import matplotlib.pyplot as plt
 import neuron
 import LFPy
+from magnetic_stimulation import MagStim
 
 # Make a simple passive axon cell model:
 h = neuron.h
@@ -55,7 +56,7 @@ forall {
 """)
 
 # Make cell model in LFPy:
-end_t = 100
+end_t = 20
 dt = 2**-5
 cell_parameters = {
         'morphology': h.all,
@@ -68,12 +69,6 @@ cell_parameters = {
         "pt3d": True,
 }
 cell = LFPy.Cell(**cell_parameters)
-print(cell.x)
-
-# Define a few chosen input locations.
-input_idxs = np.array([0,
-                       cell.get_closest_idx(x=500),
-                       cell.get_closest_idx(x=1000)])
 
 num_tsteps = int(end_t / dt + 1)
 tvec = np.arange(num_tsteps) * dt
@@ -83,27 +78,28 @@ syn = None
 synlist = []
 input_vecs = []
 
+# Create simulated magnetic stimulation.
+stim = MagStim(cell, tvec)
+i_am_current = stim.calc_i_am()
+
+# Define input locations for current.
+input_idxs = np.array(range(stim.num_of_seg))
+
 for sec in cell.allseclist:
     for seg in sec:
-        pos, d = [cell.x[i], cell.y[i], cell.z[i]], cell.d[i]
-        if i in input_idxs:
-            # print("Input inserted in ", sec.name(), seg.x)
+        # print("Input inserted in ", sec.name(), seg.x)
 
-            # Make some input. Here I use step pulses with different input times
-            # Arbitrary input current can be inserted here
-            t0_idx = int(num_tsteps * seg.x * 0.9)
-            t1_idx = t0_idx + 10
-            input_array = np.zeros(num_tsteps)
-            input_array[t0_idx:t1_idx] = 0.01  # current with units nA
+        # Arbitrary input current can be inserted here
+        input_array = i_am_current[i] * 10**9  # current with units nA
 
-            # Insert the current into the compartment
-            noise_vec = neuron.h.Vector(input_array)
-            syn = neuron.h.ISyn(sec(seg.x))
-            syn.dur = 1e9
-            syn.delay = 0
-            noise_vec.play(syn._ref_amp, cell.dt)
-            synlist.append(syn)
-            input_vecs.append(noise_vec)
+        # Insert the current into the compartment
+        noise_vec = neuron.h.Vector(input_array)
+        syn = neuron.h.ISyn(sec(seg.x))
+        syn.dur = 1e9
+        syn.delay = 0
+        noise_vec.play(syn._ref_amp, cell.dt)
+        synlist.append(syn)
+        input_vecs.append(noise_vec)
         i += 1
 
 cell.simulate(rec_vmem=True, rec_imem=True)
