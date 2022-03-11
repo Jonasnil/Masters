@@ -24,7 +24,7 @@ class MagStim:
 
         self.rlc_circuit_data_under = {'type': 'under',      # Type of stimuli (under-dampened)
                                        'tau': 0.4,           # Time constant
-                                       'v0': 30,             # Initial charge of capacitor in V
+                                       'v0': 900,            # Initial charge of capacitor in V
                                        'R': 0.09,            # Resistance in ohm
                                        'C': 200 * 10**-6,    # Conductance in F
                                        'L': 13 * 10**-6}     # Inductance in H
@@ -44,22 +44,19 @@ class MagStim:
         w2_under = m.sqrt((1. / (L_u * C_u)) - w1_under**2)
         return w1_under, w2_under
 
-    def _calc_I_under(self, V0, C, w1, w2, t):
-        return V0 * C * w2 * m.exp(-w1 * t * 10**-3) * ((w1 / w2)**2 + 1) * m.sin(w2 * t * 10**-3)
+    def _calc_dIdt_under(self, V0, C, w1, w2, t):
+        return V0 * C * w2 * ((w1 / w2)**2 + 1) * m.exp(-w1 * t * 10**-3) * (w2 * m.cos(w2 * t * 10**-3) -
+                                                                             w1 * m.sin(w2 * t * 10**-3))
 
     def _calc_E_temp(self):
-        t_array = np.append(self.t_arr, [self.t_arr[-1] + self.t_arr[-1] - self.t_arr[-2]])
-        I_array = np.zeros_like(t_array)
         stimuli_type = self.rlc_circuit_data_under['type']
-        V0 = self.rlc_circuit_data_under['v0']
-        C = self.rlc_circuit_data_under['C']
 
         if stimuli_type.lower() == 'under':
+            V0 = self.rlc_circuit_data_under['v0']
+            C = self.rlc_circuit_data_under['C']
             w1, w2 = self._calc_omega_under()
-            I_array[0] = self._calc_I_under(V0, C, w1, w2, t_array[0])
-            for i in range(1, len(t_array) - 1):
-                I_array[i] = self._calc_I_under(V0, C, w1, w2, t_array[i])
-                self.i_E_temp[i - 1] = (I_array[i] - I_array[i - 1]) / ((t_array[i] - t_array[i - 1]) * 10**-3)
+            for i in range(len(self.t_arr)):
+                self.i_E_temp[i] = self._calc_dIdt_under(V0, C, w1, w2, self.t_arr[i])
 
     def _calc_m_kk(self, r, z, h):
         return (4*r*h)/((r + h)**2 + z**2)
