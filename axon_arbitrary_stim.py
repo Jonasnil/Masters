@@ -7,6 +7,7 @@ import neuron
 import LFPy
 from magnetic_stimulation import MagStim
 
+
 # Make a simple passive axon cell model:
 h = neuron.h
 h("""
@@ -67,12 +68,14 @@ cell_parameters = {
         "tstop": end_t,
         "dt": dt,
         "pt3d": True,
+        "extracellular": True,
 }
 cell = LFPy.Cell(**cell_parameters)
 
 num_tsteps = int(end_t / dt + 1)
 tvec = np.arange(num_tsteps) * dt
 
+mag_calc_method = 'ext_e'  # Must be 'ext_e' or 'int_i'
 i = 0
 syn = None
 synlist = []
@@ -80,27 +83,33 @@ input_vecs = []
 
 # Create simulated magnetic stimulation.
 stim = MagStim(cell, tvec)
-i_am_current = stim.calc_i_am()
 
-# Define input locations for current.
+# Define input locations (segments).
 input_idxs = np.array(range(stim.num_of_seg))
 
-for sec in cell.allseclist:
-    for seg in sec:
-        # print("Input inserted in ", sec.name(), seg.x)
+if mag_calc_method == 'int_i':
+    i_am_current = stim.calc_i_am()  # Current in A.
+    for sec in cell.allseclist:
+        for seg in sec:
+            # print("Input inserted in ", sec.name(), seg.x)
 
-        # Arbitrary input current can be inserted here
-        input_array = i_am_current[i] * 10**9  # current with units nA
+            # Arbitrary input current can be inserted here
+            input_array = i_am_current[i] * 10**9  # current with units nA
 
-        # Insert the current into the compartment
-        noise_vec = neuron.h.Vector(input_array)
-        syn = neuron.h.ISyn(sec(seg.x))
-        syn.dur = 1e9
-        syn.delay = 0
-        noise_vec.play(syn._ref_amp, cell.dt)
-        synlist.append(syn)
-        input_vecs.append(noise_vec)
-        i += 1
+            # Insert the current into the compartment
+            noise_vec = neuron.h.Vector(input_array)
+            syn = neuron.h.ISyn(sec(seg.x))
+            syn.dur = 1e9
+            syn.delay = 0
+            noise_vec.play(syn._ref_amp, cell.dt)
+            synlist.append(syn)
+            input_vecs.append(noise_vec)
+            i += 1
+
+elif mag_calc_method == 'ext_e':
+    ext_quasipot = stim.calc_ext_quasipot() * 10**-3  # Potential V/m -> mV/um
+    cell.insert_v_ext(ext_quasipot, tvec)
+
 
 cell.simulate(rec_vmem=True, rec_imem=True)
 
@@ -125,4 +134,7 @@ for idx in plot_idxs:
     ax1.plot(cell.x[idx].mean(), cell.z[idx].mean(), 'o', c=plot_idx_clrs[idx])
     ax2.plot(cell.tvec, cell.vmem[idx, :], c=plot_idx_clrs[idx], lw=2)
 
-plt.savefig(join("axon_testing.png"))
+if mag_calc_method == 'int_i':
+    plt.savefig(join("axon_testing.png"))
+elif mag_calc_method == 'ext_e':
+    plt.savefig(join("axon_testing_ext.png"))

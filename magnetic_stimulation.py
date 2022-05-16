@@ -12,6 +12,8 @@ class MagStim:
         self.pos = (np.array([cell.x, cell.y, cell.z]) + start_pos)*10**-6  # Segment position [[x], [y], [z]] in m.
         self.num_of_seg = len(self.d)                                       # Number of segments.
         self.seg_coord = self.u_vec = np.zeros((self.num_of_seg + 1, 3))    # Segment coordinates [x, y, z] in m.
+        self.center_coord = np.zeros((self.num_of_seg, 3))                  # Center segment coordinates [x, y, z] in m.
+        self.disp_vec = np.zeros((self.num_of_seg - 1, 3))                  # Displacement vector between segments in m.
         self.u_vec = np.zeros((self.num_of_seg, 3))                         # Unit vector parallel to segment axis.
         self.i_E_temp = np.zeros_like(self.t_arr)                           # Temporal part of E-field.
         self.Ex_spat = np.zeros(self.num_of_seg + 1)                        # Spatial part of E-field in x-dir.
@@ -24,7 +26,7 @@ class MagStim:
 
         self.rlc_circuit_data_under = {'type': 'under',      # Type of stimuli (under-dampened)
                                        'tau': 0.4,           # Time constant
-                                       'v0': 900,            # Initial charge of capacitor in V
+                                       'v0': 30,             # Initial charge of capacitor in V
                                        'R': 0.09,            # Resistance in ohm
                                        'C': 200 * 10**-6,    # Conductance in F
                                        'L': 13 * 10**-6}     # Inductance in H
@@ -63,7 +65,7 @@ class MagStim:
 
     def _calc_point_in_E_spat(self, N, r, u, z, h, cos_theta):
         m_kk = self._calc_m_kk(r, z, h)
-        return -1*(u*N)/(m.pi*m.sqrt(m_kk))*m.sqrt(r/h)*(ss.ellipk(m_kk)*(1 - (1/2)*m_kk) -
+        return -1*(u*N)/(m.pi*m.sqrt(m_kk))*m.sqrt(r/h)*(ss.ellipk(m_kk)*(1 - 0.5*m_kk) -
                                                          ss.ellipe(m_kk))*-1*cos_theta
 
     def _calc_E_spat(self):
@@ -93,12 +95,40 @@ class MagStim:
         self._calc_E_temp()
         self._calc_E_spat()
         delta_i_am = np.zeros((self.num_of_seg, len(self.t_arr)))
-        for i in range(len(self.t_arr)-1):
+        for i in range(len(self.t_arr)):
             Ex = self.Ex_spat * self.i_E_temp[i]
             Ey = self.Ey_spat * self.i_E_temp[i]
             for seg_idx in range(self.num_of_seg):
-                delta_i_am[seg_idx, i + 1] = self._calc_delta_i_am(Ex, Ey, seg_idx)
+                delta_i_am[seg_idx, i] = self._calc_delta_i_am(Ex, Ey, seg_idx)
         return delta_i_am
+
+    def _calc_seg_disp_vec_center(self):
+        self.center_coord[0] = (self.seg_coord[0] + self.seg_coord[1]) / 2.
+        for i in range(self.num_of_seg - 2):
+            self.center_coord[i + 1] = (self.seg_coord[i + 1] + self.seg_coord[i + 2]) / 2.
+            self.disp_vec[i] = self.center_coord[i + 1] - self.center_coord[i]
+
+    def _calc_seg_ext_quasipot(self, seg_idx, Ex, Ey):
+        ext_Ex = (Ex[seg_idx + 1] + Ex[seg_idx]) / 2.
+        ext_Ey = (Ey[seg_idx + 1] + Ey[seg_idx]) / 2.
+        ext_Ez = 0
+        return np.array([ext_Ex, ext_Ey, ext_Ez])
+
+    def calc_ext_quasipot(self):
+        self._calc_seg_u_vec()
+        self._calc_seg_disp_vec_center()
+        self._calc_E_temp()
+        self._calc_E_spat()
+        ext_quasipot = np.zeros((self.num_of_seg, len(self.t_arr)))
+        for i in range(len(self.t_arr)):
+            Ex = self.Ex_spat * self.i_E_temp[i]
+            Ey = self.Ey_spat * self.i_E_temp[i]
+            for j in range(self.num_of_seg - 1):
+                ext_quasipot[j + 1, i] = (ext_quasipot[j, i] -
+                                          np.dot(0.5*(self._calc_seg_ext_quasipot(j + 1, Ex, Ey) +
+                                                      self._calc_seg_ext_quasipot(j, Ex, Ey)),
+                                                 self.disp_vec[j]))
+        return ext_quasipot
 
 
 if __name__ == "__main__":

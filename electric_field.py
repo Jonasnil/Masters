@@ -219,14 +219,52 @@ def spatial_ele_field(coil_dict, rad_scale, spat_res):
     return spat_ele_field, spat_ele_field_x, spat_ele_field_y, x_coord, y_coord
 
 
+# Calculate the spatial electrical field
+def calc_point_in_spat_ele_field_alt(N, r, u, z, h):
+    m_kk = calc_m_kk_at_xy(r, z, h)
+    return -1*(u*N)/(m.pi*m.sqrt(m_kk))*m.sqrt(r/h)*(ss.ellipk(m_kk)*(1-0.5*m_kk)
+                                                     - ss.ellipe(m_kk))
+
+
+# Create the spatial electrical field
+def spatial_ele_field_alt(coil_dict, rad_scale, spat_res):
+    N = coil_dict['N']
+    r = coil_dict['r']
+    u = coil_dict['u']
+    cpd = coil_dict['cpd']
+    one_dim_xy_pos = np.arange(-rad_scale, rad_scale, spat_res)
+    rad_points = int(rad_scale/spat_res)
+    xy_points = rad_points*2
+    spat_ele_field = np.zeros((xy_points, xy_points))
+    spat_ele_field_x = np.zeros((xy_points, xy_points))
+    spat_ele_field_y = np.zeros((xy_points, xy_points))
+    x_coord = np.zeros((xy_points, xy_points))
+    y_coord = np.zeros((xy_points, xy_points))
+
+    for i in range(-rad_points, rad_points):
+        for j in range(-rad_points, rad_points):
+            x_coord[i, j], y_coord[i, j] = one_dim_xy_pos[i], one_dim_xy_pos[j]
+            dist_xy = m.sqrt(x_coord[i, j]**2 + y_coord[i, j]**2)
+            dist_tot = m.sqrt(dist_xy**2 + cpd**2)
+            theta = m.atan2(y_coord[i, j], x_coord[i, j])
+
+            E_value = calc_point_in_spat_ele_field_alt(N, r, u, cpd, dist_tot)
+
+            spat_ele_field_x[i, j] = E_value*m.cos(theta)
+            spat_ele_field_y[i, j] = E_value*m.sin(theta)
+            spat_ele_field[i, j] = E_value
+    return spat_ele_field, spat_ele_field_x, spat_ele_field_y, x_coord, y_coord
+
+
 # Create 2D heatmap
-def plot_heatmap(f):
+def plot_heatmap(f, filename):
     plt.imshow(f, cmap='jet', extent=[-4, 4, -4, 4])
     plt.colorbar()
     plt.title('E')
     plt.xlabel('x [cm]')
     plt.ylabel('y [cm]')
-    plt.show()
+    plt.savefig(join(filename))
+    plt.clf()
 
 
 # Calculate omega 1 and 2 for UNDERdamped case
@@ -301,16 +339,16 @@ def plot_voltage(v_array, t_array):
 
 
 if __name__ == "__main__":
-#    ele_field, ele_field_x, ele_field_y, x, y = spatial_ele_field(coil_data, radius, spatial_resolution)
-#    plot_heatmap(ele_field)
-#    plot_heatmap(ele_field_x)
-#    plot_heatmap(ele_field_y)
+    ele_field, ele_field_x, ele_field_y, x, y = spatial_ele_field(coil_data, radius, spatial_resolution)
+    plot_heatmap(ele_field, "heatmap_E_tot.png")
+    plot_heatmap(ele_field_x, "heatmap_x.png")
+    plot_heatmap(ele_field_y, "heatmap_y.png")
 
-    I, I_deriv = temporal_ele_field_rlc(rlc_circuit_data_under, time_array)
+#    I, I_deriv = temporal_ele_field_rlc(rlc_circuit_data_under, time_array)
 #    I, I_deriv = temporal_ele_field_rlc(rlc_circuit_data_over, time_array)
 #    plot_simple(I, time_array[:-1])
 #    plot_simple(I_deriv, time_array[:-1])
 
-    model = TwoCompartmentNeuron(compartment_coords, coil_data)
-    model.simulate(time_array, I_deriv)
-    plot_voltage(model.V*1000, time_array)
+#    model = TwoCompartmentNeuron(compartment_coords, coil_data)
+#    model.simulate(time_array, I_deriv)
+#    plot_voltage(model.V*1000, time_array)
