@@ -7,6 +7,7 @@ import neuron
 import LFPy
 from magnetic_stimulation import MagStim
 
+'''
 
 # Make a simple passive axon cell model:
 h = neuron.h
@@ -40,7 +41,7 @@ proc subsets() { local i
 proc geom() {
 }
 proc geom_nseg() {
-forall {nseg = 20}
+forall {nseg = 500}
 }
 proc biophys() {
 }
@@ -56,26 +57,28 @@ forall {
     }
 """)
 
+'''
+
 # Make cell model in LFPy:
 end_t = 20
-dt = 2**-5
+dt = 2**-9
 cell_parameters = {
-        'morphology': h.all,
+        'morphology': 'ball_and_sticks.hoc',
         'v_init': -70,
         'nsegs_method': "lambda_f",
         "lambda_f": 500,
-        "tstart": 0,
+        "tstart": -dt,
         "tstop": end_t,
         "dt": dt,
         "pt3d": True,
         "extracellular": True,
+        "passive": True,
 }
 cell = LFPy.Cell(**cell_parameters)
-
 num_tsteps = int(end_t / dt + 1)
 tvec = np.arange(num_tsteps) * dt
-
-mag_calc_method = 'ext_e'  # Must be 'ext_e' or 'int_i'
+cell.get_idx_parent_children()
+mag_calc_method = 'int_i'  # Must be 'ext_e' or 'int_i'
 i = 0
 syn = None
 synlist = []
@@ -88,13 +91,20 @@ stim = MagStim(cell, tvec)
 input_idxs = np.array(range(stim.num_of_seg))
 
 if mag_calc_method == 'int_i':
-    i_am_current = stim.calc_i_am()  # Current in A.
+    input_current = stim.calc_input_current()  # Current in A.
+#    print(cell.get_idx_children('soma[0]'))
     for sec in cell.allseclist:
+        print(sec.name())
+        print(cell.get_idx_children(sec.name()))
+#        for child in neuron.h.SectionRef(sec=sec).child:
+#            print(child)
+#        print(neuron.h.SectionRef(sec=sec).has_parent())
         for seg in sec:
+            print(seg.x, neuron.h.parent_connection(sec=sec))
             # print("Input inserted in ", sec.name(), seg.x)
 
             # Arbitrary input current can be inserted here
-            input_array = i_am_current[i] * 10**9  # current with units nA
+            input_array = input_current[i] * 10**9  # current with units nA
 
             # Insert the current into the compartment
             noise_vec = neuron.h.Vector(input_array)
@@ -113,15 +123,18 @@ elif mag_calc_method == 'ext_e':
 
 cell.simulate(rec_vmem=True, rec_imem=True)
 
-
 # The rest is plotting
 fig = plt.figure(figsize=[9, 6])
 fig.subplots_adjust(wspace=0.5, top=0.9, bottom=0.1, hspace=0.6)
-ax1 = fig.add_subplot(211, aspect=1, frameon=False, title="cell",
+ax1 = fig.add_subplot(311, aspect=1, frameon=False, title="cell",
                       xlabel="x (µm)", ylabel="z (µm)",
                       ylim=[-200, 200], xlim=[-100, 1000])
-ax2 = fig.add_subplot(212, xlabel="time (ms)",
-                      ylabel="membrane\npotential (mV)")
+ax2 = fig.add_subplot(312, xlabel="time (ms)",
+                      ylabel="membrane\npotential (mV)",
+                      xlim=[0, 2.5])
+ax3 = fig.add_subplot(313, xlabel="time (ms)",
+                      ylabel="membrane\ncurrent (nA)",
+                      xlim=[0, 2.5])
 
 [ax1.plot(cell.x[idx],  cell.z[idx], c='gray', lw=1)
  for idx in range(cell.totnsegs)]
@@ -132,7 +145,8 @@ plot_idx_clrs = {idx: plt.cm.viridis(num / (len(plot_idxs) - 1))
 
 for idx in plot_idxs:
     ax1.plot(cell.x[idx].mean(), cell.z[idx].mean(), 'o', c=plot_idx_clrs[idx])
-    ax2.plot(cell.tvec, cell.vmem[idx, :], c=plot_idx_clrs[idx], lw=2)
+    ax2.plot(cell.tvec, cell.vmem[idx, :] - cell.vmem[idx, 0, None], c=plot_idx_clrs[idx], lw=2)
+    ax3.plot(cell.tvec, cell.imem[idx, :], c=plot_idx_clrs[idx], lw=2)
 
 if mag_calc_method == 'int_i':
     plt.savefig(join("axon_testing.png"))
