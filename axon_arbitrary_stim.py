@@ -63,9 +63,9 @@ forall {
 end_t = 20
 dt = 2**-9
 cell_parameters = {
-        'morphology': 'ball_and_sticks.hoc',
+        'morphology': 'simple_axon.hoc',
         'v_init': -70,
-        'nsegs_method': "lambda_f",
+        'nsegs_method': None,
         "lambda_f": 500,
         "tstart": -dt,
         "tstop": end_t,
@@ -77,7 +77,7 @@ cell_parameters = {
 cell = LFPy.Cell(**cell_parameters)
 num_tsteps = int(end_t / dt + 1)
 tvec = np.arange(num_tsteps) * dt
-cell.get_idx_parent_children()
+
 mag_calc_method = 'int_i'  # Must be 'ext_e' or 'int_i'
 i = 0
 syn = None
@@ -91,16 +91,9 @@ stim = MagStim(cell, tvec)
 input_idxs = np.array(range(stim.num_of_seg))
 
 if mag_calc_method == 'int_i':
-    input_current = stim.calc_input_current()  # Current in A.
-#    print(cell.get_idx_children('soma[0]'))
+    input_current = stim.calc_input_current_multisection()  # Current in A.
     for sec in cell.allseclist:
-        print(sec.name())
-        print(cell.get_idx_children(sec.name()))
-#        for child in neuron.h.SectionRef(sec=sec).child:
-#            print(child)
-#        print(neuron.h.SectionRef(sec=sec).has_parent())
         for seg in sec:
-            print(seg.x, neuron.h.parent_connection(sec=sec))
             # print("Input inserted in ", sec.name(), seg.x)
 
             # Arbitrary input current can be inserted here
@@ -123,6 +116,17 @@ elif mag_calc_method == 'ext_e':
 
 cell.simulate(rec_vmem=True, rec_imem=True)
 
+
+# Create 2D heatmap
+# plt.imshow(cell.vmem, cmap='jet')
+# plt.axis('auto')
+# plt.colorbar()
+# plt.title('Axon Membrane Potential')
+# plt.xlabel('Compartment number')
+# plt.ylabel('time [ms]')
+# plt.savefig(join("axon_heatmap.png"))
+# plt.clf()
+
 # The rest is plotting
 fig = plt.figure(figsize=[9, 6])
 fig.subplots_adjust(wspace=0.5, top=0.9, bottom=0.1, hspace=0.6)
@@ -139,7 +143,7 @@ ax3 = fig.add_subplot(313, xlabel="time (ms)",
 [ax1.plot(cell.x[idx],  cell.z[idx], c='gray', lw=1)
  for idx in range(cell.totnsegs)]
 
-plot_idxs = input_idxs
+plot_idxs = input_idxs[np.array([0, int(len(input_idxs)/2.), -1])]
 plot_idx_clrs = {idx: plt.cm.viridis(num / (len(plot_idxs) - 1))
                  for num, idx in enumerate(plot_idxs)}
 

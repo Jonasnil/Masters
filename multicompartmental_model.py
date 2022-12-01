@@ -25,7 +25,7 @@ class MultiCompartmentNeuron:
         self.Ra = Ra
         self.t_arr = time_array
         # seg_coords is start/divide/end pos of total comp-structure in [x, y, z] coords (micro m converted to m)
-        self.seg_coord = np.array([[x + start_pos[0], 0 + start_pos[1]] for x in np.arange(0, 1001, 100)])*10**-6
+        self.seg_coord = np.array([[x + start_pos[0], 0 + start_pos[1]] for x in np.arange(0, 201, 100)])*10**-6
         self.num_of_seg = len(self.seg_coord[:, 0]) - 1
         self.l = np.zeros(self.num_of_seg)
         self.dir_vec = np.zeros((self.num_of_seg, 2))

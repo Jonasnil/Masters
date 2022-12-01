@@ -28,7 +28,6 @@ coil_data = {'N': 30,                       # Number of loops in coil
 
 # RLC circuit data
 rlc_circuit_data_under = {'type': 'under',  # Type of stimuli (over/under-dampened)
-                          'tau': 0.4,       # Time constant
                           'v0': 30,         # Initial charge of capacitor in V
                           'R': 0.09,        # Resistance in ohm
                           'C': 200*10**-6,  # Conductance in F
@@ -36,11 +35,10 @@ rlc_circuit_data_under = {'type': 'under',  # Type of stimuli (over/under-dampen
                           }
 
 rlc_circuit_data_over = {'type': 'over',    # Type of stimuli (over/under-dampened)
-                         'tau': 0.4,        # Time constant
                          'v0': 30,          # Initial charge of capacitor in V
-                         'R': 0.09,         # ohm
+                         'R': 3,            # ohm
                          'C': 200*10**-6,   # F
-                         'L': 13*10**-6     # H
+                         'L': 165*10**-6    # H
                          }
 
 
@@ -177,8 +175,8 @@ class TwoCompartmentNeuron:
 
 
 # Calculate m = k**2
-def calc_m_kk_at_xy(r, z, h):
-    return (4*r*h)/((r + h)**2 + z**2)
+def calc_m_kk_at_xy(r, z, rho):
+    return (4*r*rho)/((r + rho)**2 + z**2)
 
 
 # Calculate the spatial electrical field
@@ -220,16 +218,15 @@ def spatial_ele_field(coil_dict, rad_scale, spat_res):
 
 
 # Calculate the spatial electrical field
-def calc_point_in_spat_ele_field_alt(N, r, u, z, h):
-    m_kk = calc_m_kk_at_xy(r, z, h)
-    return -1*(u*N)/(m.pi*m.sqrt(m_kk))*m.sqrt(r/h)*(ss.ellipk(m_kk)*(1-0.5*m_kk)
-                                                     - ss.ellipe(m_kk))
+def calc_point_in_spat_ele_field_alt(N, r_c, u, z, rho):
+    m_kk = calc_m_kk_at_xy(r_c, z, rho)
+    return -1*(u*N)/(m.pi*m.sqrt(m_kk))*m.sqrt(r_c/rho)*(ss.ellipk(m_kk)*(1-0.5*m_kk) - ss.ellipe(m_kk))
 
 
 # Create the spatial electrical field
 def spatial_ele_field_alt(coil_dict, rad_scale, spat_res):
     N = coil_dict['N']
-    r = coil_dict['r']
+    r_c = coil_dict['r']
     u = coil_dict['u']
     cpd = coil_dict['cpd']
     one_dim_xy_pos = np.arange(-rad_scale, rad_scale, spat_res)
@@ -246,13 +243,13 @@ def spatial_ele_field_alt(coil_dict, rad_scale, spat_res):
             x_coord[i, j], y_coord[i, j] = one_dim_xy_pos[i], one_dim_xy_pos[j]
             dist_xy = m.sqrt(x_coord[i, j]**2 + y_coord[i, j]**2)
             dist_tot = m.sqrt(dist_xy**2 + cpd**2)
+
+            E_value = calc_point_in_spat_ele_field_alt(N, r_c, u, cpd, dist_xy)
+
             theta = m.atan2(y_coord[i, j], x_coord[i, j])
-
-            E_value = calc_point_in_spat_ele_field_alt(N, r, u, cpd, dist_tot)
-
-            spat_ele_field_x[i, j] = E_value*m.cos(theta)
-            spat_ele_field_y[i, j] = E_value*m.sin(theta)
-            spat_ele_field[i, j] = E_value
+            spat_ele_field_x[i, j] = E_value*(-m.sin(theta))
+            spat_ele_field_y[i, j] = E_value*m.cos(theta)
+            spat_ele_field[i, j] = m.sqrt(spat_ele_field_x[i, j]**2 + spat_ele_field_y[i, j]**2)
     return spat_ele_field, spat_ele_field_x, spat_ele_field_y, x_coord, y_coord
 
 
@@ -326,6 +323,11 @@ def temporal_ele_field_rlc(rlc_dict, t_array_in):
 
 def plot_simple(data, x_axis):
     plt.plot(x_axis, data)
+    plt.xlim(-0.1, 3)
+    plt.title('Overdampened')
+    plt.xlabel('Time in ms')
+    plt.ylabel('Current in A')
+    plt.savefig(join("overdampened.png"))
 
 
 
@@ -339,7 +341,7 @@ def plot_voltage(v_array, t_array):
 
 
 if __name__ == "__main__":
-    ele_field, ele_field_x, ele_field_y, x, y = spatial_ele_field(coil_data, radius, spatial_resolution)
+    ele_field, ele_field_x, ele_field_y, x, y = spatial_ele_field_alt(coil_data, radius, spatial_resolution)
     plot_heatmap(ele_field, "heatmap_E_tot.png")
     plot_heatmap(ele_field_x, "heatmap_x.png")
     plot_heatmap(ele_field_y, "heatmap_y.png")

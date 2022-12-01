@@ -1,13 +1,20 @@
 import math as m
 import numpy as np
 import scipy.special as scis
+import neuron
 
 
 class MagStim:
-    def __init__(self, LFPy_cell, time_array, start=[10100, 10100, 0]):
-        self.cell = LFPy_cell
-        self.children_dict = self.cell.get_dict_of_children_idx()
-        self.connection_dict = self.cell.get_dict_parent_connections()
+    def __init__(self, LFPy_cell, time_array, start=[-40000, 10000, 0]):
+        self.cell = LFPy_cell                                               # Cell object from LFPy.
+        self.children_dict = {}                                             # Dict, children sections.
+        self.parent_connection_dict = self.cell.get_dict_parent_connections()  # Dict, conn to parent in float [0, 1].
+        self.parent_connection_idx = {}                                     # Dict, seg idx of parent.
+        self.has_children = {}                                              # Dict, boolean.
+        self.cell_idx_dict = {}                                             # Dict, all seg idx per sec.
+        self.p_c_center_u_vec_dict = {}                                     # Dict, center unit vec for p-c connections.
+        self.p_c_l_c_dict = {}                                              # Dict, l between center of p-c connections.
+        self.p_c_Ra = {}                                                    # Dict, Ra for p-c connections.
         self.t_arr = time_array                                             # Time of neuron simulation in ms.
         self.Ra = self.cell.get_axial_resistance() * 10**6                  # Axial res from NEURON in Ohm (pre->curr).
         self.d = self.cell.d * 10**-6                                       # Segment diameter in m.
@@ -38,41 +45,120 @@ class MagStim:
                                        'C': 200 * 10**-6,    # Conductance in F
                                        'L': 13 * 10**-6}     # Inductance in H
 
-    def _get_child_connection_idx(self, sec, seg_idx_in_sec):
-        connection_idx_list = []
-        num_of_seg_in_sec = len(seg_idx_in_sec)
-        for connection in self.connection_dict[sec.name()]:
-            if connection == 0:
-                connection_idx_list.append(connection)
-            else:
-                connection_idx = m.ceil(connection * num_of_seg_in_sec) - 1
-                connection_idx_list.append(connection_idx)
-        return connection_idx_list
+    def _get_local_parent_connection_idx(self, parent_name, child_name):
+        num_of_seg_in_sec = len(self.cell_idx_dict[parent_name])
+        parent_connection = self.parent_connection_dict[child_name]
+        if parent_connection == 0:
+            return parent_connection
+        else:
+            return m.ceil(parent_connection * num_of_seg_in_sec) - 1
 
     def _create_cell_structure_dicts(self):
-        has_children = {}
-        connection_idx = {}
-        cell_idx_dict = {}
         seg_idx = 0
         for sec in self.cell.allseclist:
+            sec_name = sec.name()
             list_of_seg_idx_in_sec = []
-            children = self.cell.get_children_idx(sec.name())
             for _ in sec:
-                list_of_seg_idx_in_sec.append([seg_idx])
+                list_of_seg_idx_in_sec.append(seg_idx)
                 seg_idx += 1
-            cell_idx_dict[sec.name()] = [list_of_seg_idx_in_sec]
-            if len(children) > 0:
-                has_children[sec.name()] = True
-                connection_idx[sec.name()] = self._get_child_connection_idx(sec, list_of_seg_idx_in_sec)
-            else:
-                has_children[sec.name()] = False
-                connection_idx[sec.name()] = []
-        return cell_idx_dict, has_children, connection_idx
+            self.cell_idx_dict[sec_name] = list_of_seg_idx_in_sec
 
-    def _calc_seg_vectors(self):
-        self.seg_coord[0] = np.array([self.pos[0, 0, 0], self.pos[1, 0, 0], self.pos[2, 0, 0]])
+            child_list = []
+            for child in neuron.h.SectionRef(sec=sec).child:
+                child_list.append(child)
+            self.children_dict[sec_name] = child_list
+            if len(child_list) > 0:
+                self.has_children[sec_name] = True
+            else:
+                self.has_children[sec_name] = False
+
+        for sec in self.cell.allseclist:
+            sec_name = sec.name()
+            if self.has_children[sec_name]:
+                for child in self.children_dict[sec_name]:
+                    child_name = child.name()
+                    local_parent_idx = self._get_local_parent_connection_idx(sec_name, child_name)
+                    self.parent_connection_idx[child_name] = self.cell_idx_dict[sec_name][local_parent_idx]
+
+    def _calc_interseg_data(self):
         for i in range(self.num_of_seg):
-            pass
+            self.center_coord[i] = (self.seg_coord[i] + self.seg_coord[i + 1]) / 2.
+        for sec in self.cell.allseclist:
+            sec_name = sec.name()
+            sec_idx = self.cell_idx_dict[sec_name]
+            for i in sec_idx[:-1]:
+                self.center_vec[i] = self.center_coord[i + 1] - self.center_coord[i]
+                self.l_c[i] = m.sqrt(self.center_vec[i, 0] ** 2
+                                     + self.center_vec[i, 1] ** 2
+                                     + self.center_vec[i, 2] ** 2)
+                self.center_u_vec[i] = self.center_vec[i] / self.l_c[i]
+
+            if self.has_children[sec_name]:
+                for child in self.children_dict[sec_name]:
+                    child_name = child.name()
+                    child_idx = self.cell_idx_dict[child_name][0]
+                    parent_idx = self.parent_connection_idx[child_name]
+#                    if sec_name == 'soma[0]':
+#                        if self.parent_connection_dict[sec_name] == 0.5:
+#                            pass
+
+                    center_vec = self.center_coord[child_idx] - self.center_coord[parent_idx]
+                    l_c = m.sqrt(center_vec[0]**2 + center_vec[1]**2 + center_vec[2]**2)
+                    self.p_c_l_c_dict[child_name] = l_c
+                    self.p_c_center_u_vec_dict[child_name] = center_vec / l_c
+                    self.p_c_Ra[child_name] = self.Ra[parent_idx+1] + self.Ra[child_idx]
+
+    def _calc_i_am_multisection(self, Ra, Ex, Ey, seg_pre, seg_post, center_u_vec):
+        return -1. / Ra * ((Ex[seg_post] - Ex[seg_pre]) * center_u_vec[0]
+                           + (Ey[seg_post] - Ey[seg_pre]) * center_u_vec[1])
+
+    def _calc_I_a_multisection(self, Ra, Ex, Ey, seg_pre, seg_post, center_u_vec):
+        return 1. / Ra * ((Ex[seg_post] + Ex[seg_pre]) * 0.5 * center_u_vec[0]
+                          + (Ey[seg_post] + Ey[seg_pre]) * 0.5 * center_u_vec[1]) * self.l_c[0]
+
+    def _calc_i_am_array_multisection(self):
+        i_am_array = np.zeros((self.num_of_seg, len(self.t_arr)))
+        for i in range(len(self.t_arr)):
+            Ex = self.Ex_spat * self.i_E_temp[i]
+            Ey = self.Ey_spat * self.i_E_temp[i]
+            for sec in self.cell.allseclist:
+                sec_name = sec.name()
+                for seg_idx in self.cell_idx_dict[sec_name][:-1]:
+                    i_am = self._calc_I_a_multisection(self.Ra[seg_idx + 1],
+                                                        Ex,
+                                                        Ey,
+                                                        seg_idx,
+                                                        seg_idx + 1,
+                                                        self.center_u_vec[seg_idx])
+                    i_am_array[seg_idx, i] += i_am
+                    i_am_array[seg_idx + 1, i] += -i_am
+
+                if self.has_children[sec_name]:
+                    for child in self.children_dict[sec_name]:
+                        child_name = child.name()
+                        parent_idx = self.parent_connection_idx[child_name]
+                        child_idx = self.cell_idx_dict[child_name][0]
+                        center_u_vec = self.p_c_center_u_vec_dict[child_name]
+                        i_am_p_c = self._calc_I_a_multisection(self.p_c_Ra[child_name],
+                                                                Ex,
+                                                                Ey,
+                                                                parent_idx,
+                                                                child_idx,
+                                                                center_u_vec)
+                        i_am_array[parent_idx, i] += i_am_p_c
+                        i_am_array[child_idx, i] += -i_am_p_c
+        return i_am_array
+
+    def calc_input_current_multisection(self):
+        self._create_cell_structure_dicts()
+        self._calc_seg_u_vec()
+        self._calc_interseg_data()
+        self._calc_E_temp()
+        self._calc_E_spat()
+
+        input_current = self._calc_i_am_array_multisection()
+        return input_current
+
 
     def _calc_seg_u_vec(self):
         self.seg_coord[0] = np.array([self.pos[0, 0, 0], self.pos[1, 0, 0], self.pos[2, 0, 0]])
@@ -170,6 +256,7 @@ class MagStim:
         return I_a_arr
 
     def calc_input_current(self, input_type='i_am'):
+        self._create_cell_structure_dicts()
         self._calc_seg_u_vec()
         self._calc_seg_u_vec_center()
         self._calc_E_temp()
@@ -180,7 +267,6 @@ class MagStim:
         elif input_type =='I_a':
             input_current = self._calc_I_a_array()
         return input_current
-
 
     def _calc_seg_ext_quasipot(self, seg_idx, Ex, Ey):
         ext_Ex = (Ex[seg_idx + 1] + Ex[seg_idx]) / 2.
