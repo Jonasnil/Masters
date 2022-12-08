@@ -1,0 +1,44 @@
+
+
+
+create axon[6]
+
+axon[0] {
+    nseg = 1
+    pt3dadd(0, 0, 0, 1)
+    pt3dadd(100, 0, 0, 1)
+}
+
+axon[1] {
+    nseg = 1
+    pt3dadd(100, 0, 0, 1)
+    pt3dadd(200, 0, 0, 1)
+}
+
+axon[2] {
+    nseg = 1
+    pt3dadd(200, 0, 0, 1)
+    pt3dadd(300, 0, 0, 1)
+}
+axon[3] {
+    nseg = 1
+    pt3dadd(300, 0, 0, 1)
+    pt3dadd(400, 0, 0, 1)
+}
+
+axon[4] {
+    nseg = 1
+    pt3dadd(400, 0, 0, 1)
+    pt3dadd(500, 0, 0, 1)
+}
+
+axon[5] {
+    nseg = 1
+    pt3dadd(500, 0, 0, 1)
+    pt3dadd(600, 0, 0, 1)
+}
+connect axon[1](0), axon[0](1)
+connect axon[2](0), axon[1](1)
+connect axon[3](0), axon[2](1)
+connect axon[4](0), axon[3](1)
+connect axon[5](0), axon[4](1)

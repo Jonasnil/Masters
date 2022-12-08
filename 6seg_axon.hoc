@@ -4,7 +4,7 @@
 create axon[1]
 
 axon[0] {
-    nseg = 5
+    nseg = 6
     pt3dadd(0, 0, 0, 1)
-    pt3dadd(1000, 0, 0, 1)
+    pt3dadd(600, 0, 0, 1)
 }

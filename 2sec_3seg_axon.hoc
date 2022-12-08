@@ -1,0 +1,18 @@
+
+
+
+create axon[2]
+
+axon[0] {
+    nseg = 3
+    pt3dadd(0, 0, 0, 1)
+    pt3dadd(300, 0, 0, 1)
+}
+
+axon[1] {
+    nseg = 3
+    pt3dadd(300, 0, 0, 1)
+    pt3dadd(600, 0, 0, 1)
+}
+
+connect axon[1](0), axon[0](1)
