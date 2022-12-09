@@ -145,29 +145,33 @@ class MagneticField:
                     self.parent_connection_idx[child_name] = self.cell_idx_dict[sec_name][local_parent_idx]
 
     def _calc_multisec_data(self):
-        for i in range(self.cell.totnsegs):
-            self.c_comp_coords[i] = (self.comp_coords[i] + self.comp_coords[i + 1]) * 0.5
+        for sec in self.cell.allseclist:
+            sec_name = sec.name()
+            sec_idx = self.cell_idx_dict[sec_name]
+            for i in sec_idx:
+                self.c_comp_coords[i] = np.array([self.cell.x[i, 0] + self.cell.x[i, 1],
+                                                  self.cell.y[i, 0] + self.cell.y[i, 0],
+                                                  self.cell.z[i, 0] + self.cell.z[i, 0]]) * 0.5
         for sec in self.cell.allseclist:
             sec_name = sec.name()
             sec_idx = self.cell_idx_dict[sec_name]
             for i in sec_idx[:-1]:
                 self.c_comp_vecs[i] = self.c_comp_coords[i + 1] - self.c_comp_coords[i]
-
             if self.has_children[sec_name]:
                 for child in self.children_dict[sec_name]:
                     child_name = child.name()
                     child_idx = self.cell_idx_dict[child_name][0]
                     parent_idx = self.parent_connection_idx[child_name]
-                    #                    if sec_name == 'soma[0]':
-                    #                        if self.parent_connection_dict[sec_name] == 0.5:
-                    #                            + 1-0.5 * soma_length ...
-
                     center_vec = self.c_comp_coords[child_idx] - self.c_comp_coords[parent_idx]
+
                     self.par_child_vec_dict[child_name] = center_vec
                     self.par_child_center_point[child_name] = self.c_comp_coords[parent_idx] + center_vec * 0.5
                     l_c = m.sqrt(center_vec[0] ** 2 + center_vec[1] ** 2 + center_vec[2] ** 2)
                     self.par_child_l_c_dict[child_name] = l_c
-                    self.par_child_r_a[child_name] = self.r_a[parent_idx + 1] + self.r_a[child_idx]
+                    # r_a_parent in MOhm, l and d in micro m
+                    r_a_parent = (4 * self.manual_sim_data['Ra'] * self.l[parent_idx] * 0.5) / (
+                                m.pi * self.d[parent_idx] ** 2)
+                    self.par_child_r_a[child_name] = r_a_parent + self.r_a[child_idx]
 
     def _calc_input_current_multisec(self):
         for sec in self.cell.allseclist:
