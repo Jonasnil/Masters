@@ -451,7 +451,7 @@ class MagneticField:
         coil = plt.Circle((0, 0), r_c*10**2, color='gray', fill=False, lw=2)
         fig, ax = plt.subplots()
         for i in range(self.cell.totnsegs):
-            ax.plot(self.cell.x[i]*10**-4, self.cell.y[i]*10**-4, 'o', linestyle='-')
+            ax.plot(self.cell.x[i]*10**-4, self.cell.y[i]*10**-4, 'o', linestyle='-', color='b')
         ax.add_patch(coil)
         plt.title('Placement')
         plt.xlabel('x [cm]')
@@ -509,6 +509,16 @@ class MagneticField:
         plt.xlim(xmin, xmax)
         plt.ylim(ymin, ymax)
         plt.savefig(join('neuron_placement'))
+        plt.clf()
+
+    def plot_vmem_vs_d(self, d_range, vmem):
+        visual_prestart = (d_range[-1] - d_range[0]) * 0.05
+        plt.plot(d_range, vmem)
+        plt.xlim(d_range[0] - visual_prestart, d_range[-1])
+        plt.title('Membrane Potential')
+        plt.xlabel('Compartment Diameter [$\mu$m]')
+        plt.ylabel('V [mV]')
+        plt.savefig(join('vmem_vs_d'))
         plt.clf()
 
 if __name__ == "__main__":

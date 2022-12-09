@@ -1,0 +1,6 @@
+create axon[1]
+axon[0] {
+    nseg = 100
+    pt3dadd(0, 0, 0, 101)
+    pt3dadd(10000, 0, 0, 101)
+}
