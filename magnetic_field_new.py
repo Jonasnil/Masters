@@ -33,9 +33,9 @@ class MagneticField:
         self.c_comp_vecs = np.zeros((self.cell.totnsegs - 1, 3))
         self.input_current = np.zeros((self.cell.totnsegs, len(self.time_array)))
 
-        self.manual_sim_data = {'Em': -70 * 10**-3,         # Resting membrane potential [V]
+        self.manual_sim_data = {'Em': -70 * 10**-3,         # Resting membrane potential [V] (default -70)
                                 'Rm': 30000 * 10**-4,       # Membrane resistivity [Ohm m**2]
-                                'Ra': 150 * 10**-2,         # Axial resistivity [Ohm m]
+                                'Ra': 150 * 10**-2,         # Axial resistivity [Ohm m] (default 150)
                                 'Cm': 1 * 10**-2            # Specific membrane capacitance [F/m**2]
                                 }
         self.coil_data = {'N': 30,                          # Number of loops in coil
@@ -168,8 +168,8 @@ class MagneticField:
                     self.par_child_center_point[child_name] = self.c_comp_coords[parent_idx] + center_vec * 0.5
                     l_c = m.sqrt(center_vec[0] ** 2 + center_vec[1] ** 2 + center_vec[2] ** 2)
                     self.par_child_l_c_dict[child_name] = l_c
-                    # r_a_parent in MOhm, l and d in micro m
-                    r_a_parent = (4 * self.manual_sim_data['Ra'] * self.l[parent_idx] * 0.5) / (
+                    # r_a_parent in MOhm, l and d in micro m, sec=parent section, child=child section.
+                    r_a_parent = (4 * sec.Ra * self.l[parent_idx] * 0.5) / (
                                 m.pi * self.d[parent_idx] ** 2)
                     self.par_child_r_a[child_name] = r_a_parent + self.r_a[child_idx]
 
@@ -318,7 +318,7 @@ class MagneticField:
         return input_vec, synlist
 
     def _calc_dv_mem(self, Em, Rm, Ra, Cm, v_prev_seg, v_curr_seg, v_next_seg, d, l, I_a):
-        # Returns V from (V/(Ohm*m) * (s/(F/m**2))) and (A/m**2) * (s/(F/m**2))
+        # Returns V from (V/(Ohm*m**2) * (s/(F/m**2))) and (A/m**2) * (s/(F/m**2))
         return ((Em - v_curr_seg) / Rm
                 + (d / (4 * Ra)) * ((v_next_seg - v_curr_seg) / l**2 + (v_prev_seg - v_curr_seg) / l**2)
                 + I_a / (m.pi * d * l)) * ((self.timestep * 10**-3) / Cm)
@@ -384,6 +384,22 @@ class MagneticField:
         plt.savefig(join(filename))
         plt.clf()
 
+    def plot_vmem_hay(self, cell, filename):
+        visual_prestart = (self.time_array[-1] - self.time_array[0]) * 0.05
+        plot_idxs = np.array([0, cell.get_closest_idx(x=cell.x[0].mean(),
+                                                      y=cell.y[0].mean() + 500,
+                                                      z=cell.z[0].mean())])
+        ax1 = plt.subplot(1, 2, 1, aspect=1, title='Cell Position', xlabel='x [cm]', ylabel='y [cm]')
+        ax1.plot(cell.x.T * 10**-4, cell.y.T * 10**-4, c='k')
+        ax2 = plt.subplot(1, 2, 2, xlabel='Time [ms]', ylabel='V [mV]', title='Membrane Potential')
+        for seg_idx in plot_idxs:
+            ax1.plot(cell.x[seg_idx].mean() * 10**-4, cell.y[seg_idx].mean() * 10**-4, 'o')
+            ax2.plot(self.time_array, cell.vmem[seg_idx, :-1], label=str(seg_idx+1))
+        plt.xlim(self.time_array[0] - visual_prestart, self.time_array[-1])
+        plt.legend(loc='upper right', title='Seg. #')
+        plt.savefig(join(filename))
+        plt.clf()
+
     def plot_vmem_normalized(self, vmem, filename, rlc_type):
         amplitude = np.max(vmem)
         visual_prestart = (self.time_array[-1] - self.time_array[0]) * 0.05
@@ -395,6 +411,21 @@ class MagneticField:
         plt.ylabel('Normalized V')
         plt.legend(loc='upper right', title='Seg. #')
         plt.savefig(join(rlc_type + '_' + filename))
+        plt.clf()
+
+    def plot_hh_axon_heatmap(self, data):
+        fig, ax = plt.subplots()
+        v_max = 20
+        v_min = -90
+        pcm = plt.pcolormesh(data.T, cmap='inferno', vmin=v_min, vmax=v_max)
+        plt.colorbar(pcm, label='mV')
+        plt.title('Visualization of Membrane Potential in Axon')
+        plt.xticks(np.linspace(0, self.cell.totnsegs, 17), np.arange(-8, 8 + 1, 1))
+        plt.yticks(np.linspace(0, len(self.time_array), int(self.time_array[-1])), np.arange(self.time_array[0],
+                                                                                        self.time_array[-1], 1))
+        plt.xlabel('x [cm]')
+        plt.ylabel('Time [ms]')
+        plt.savefig(join('hh_axon_heatmap.png'))
         plt.clf()
 
     def _plot_heatmap(self, data, x_array, y_array, filename, title, v_min, v_max, spat_res, cbar_label='[$Vs/Am$]'):
@@ -479,14 +510,15 @@ class MagneticField:
 
     def plot_neuron_placement_multisec(self):
         r_c = self.coil_data['r_c']
-#        coil = plt.Circle((0, 0), r_c*10**2, color='gray', fill=False, lw=2)
+        coil = plt.Circle((0, 0), r_c*10**2, color='gray', fill=False, lw=2)
         fig, ax = plt.subplots()
         for sec in self.cell.allseclist:
             sec_name = sec.name()
             sec_idx = self.cell_idx_dict[sec_name]
             for seg_idx in sec_idx:
-                ax.plot(self.cell.x[seg_idx]*10**-4, self.cell.y[seg_idx]*10**-4, 'o', linestyle='-')
-#        ax.add_patch(coil)
+                ax.plot(self.cell.x[seg_idx]*10**-4, self.cell.y[seg_idx]*10**-4, linestyle='-', color='b')
+        ax.add_patch(coil)
+        ax.set_aspect(1)
         plt.title('Placement')
         plt.xlabel('x [cm]')
         plt.ylabel('y [cm]')
@@ -508,14 +540,16 @@ class MagneticField:
             ymin -= (ymax-ymin)*0.30
         plt.xlim(xmin, xmax)
         plt.ylim(ymin, ymax)
+#        plt.xlim(xmin, xmax)
+#        plt.ylim(ymin, ymax)
         plt.savefig(join('neuron_placement'))
         plt.clf()
 
     def plot_vmem_vs_d(self, d_range, vmem):
         visual_prestart = (d_range[-1] - d_range[0]) * 0.05
         plt.plot(d_range, vmem)
-        plt.xlim(d_range[0] - visual_prestart, d_range[-1])
-        plt.title('Membrane Potential')
+        plt.xlim(d_range[0] - visual_prestart, d_range[-1] + visual_prestart)
+        plt.title('Maximum Membrane Potential')
         plt.xlabel('Compartment Diameter [$\mu$m]')
         plt.ylabel('V [mV]')
         plt.savefig(join('vmem_vs_d'))
